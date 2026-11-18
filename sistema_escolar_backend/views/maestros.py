@@ -8,3 +8,50 @@ from rest_framework import generics
 from rest_framework import status
 from rest_framework.response import Response
 from django.contrib.auth.models import Group
+
+import json
+
+class MaestrosView(generics.CreateAPIView):
+    def get_permissions(self):
+        if self.request.method in ['GET', 'PUT', 'DELETE']:
+            return [permissions.IsAuthenticated()]
+        return []
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        user = UserSerializer(data=request.data)
+
+        if user.is_valid():
+            role = request.data['rol']
+            first_name = request.data['first_name']
+            last_name = request.data['last_name']
+            email = request.data['email']
+            password = request.data['password']
+
+            existing_user = User.objects.filter(email=email).first()
+            if existing_user:
+                return Response({"message": "Usuario "+email+", ya está registrado"}, 400)
+
+            user = User.objects.create(username=email, email=email,
+                                       first_name=first_name, last_name=last_name,
+                                       is_active=1)
+            user.set_password(password)
+            user.save()
+
+            group, created = Group.objects.get_or_create(name=role)
+            group.user_set.add(user)
+            user.save()
+
+            maestro = Maestros.objects.create(user=user,
+                                              id_trabajador=request.data["id_trabajador"],
+                                              fecha_nacimiento=request.data["fecha_nacimiento"],
+                                              telefono=request.data["telefono"],
+                                              rfc=request.data["rfc"].upper(),
+                                              cubiculo=request.data["cubiculo"],
+                                              area_investigacion=request.data["area_investigacion"],
+                                              materias_array=json.dumps(request.data["materias_json"], ensure_ascii=False))
+            maestro.save()
+
+            return Response({"Maestro creado correctamente": maestro.id}, 201)
+
+        return Response(user.errors, status=status.HTTP_400_BAD_REQUEST)
